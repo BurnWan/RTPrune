@@ -368,7 +368,10 @@ class NoTPAttention(torch.nn.Module):
             output = output.permute(0, 2, 1, 3).reshape(bsz, seqlen, -1)
             # output = output.permute(0, 2, 1, 3).contiguous().view(bsz, seqlen, -1)
         output = self.out_proj(output)
-        return output
+        # [modified]
+        attn_weights = torch.matmul(xq, xk.transpose(-2, -1)) / math.sqrt(xq.shape[-1])
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+        return output, attn_weights
 
 class NoTPTransformerBlock(nn.Module):
     def __init__(self, cfg, layer_id: int, multiple_of=256):
@@ -390,10 +393,12 @@ class NoTPTransformerBlock(nn.Module):
         )
 
     def forward(self, x: torch.Tensor):
-        residual = self.self_attn.forward(self.layer_norm1(x))
+        # [modified]
+        residual, attn_weights = self.self_attn.forward(self.layer_norm1(x))
         h = x + residual
         out = h + self.mlp.forward(self.layer_norm2(h))
-        return out
+        # [modified]
+        return out, attn_weights
 
 
 class NoTPTransformer(nn.Module):
@@ -417,7 +422,8 @@ class NoTPTransformer(nn.Module):
             self,
             hidden_states,
     ):
-
+        # [modified]
+        attn_list = []
         for lid, layer in enumerate(self.layers):
             # if lid in self.recompute_list:
             #     def custom(layer_id):
@@ -436,9 +442,11 @@ class NoTPTransformer(nn.Module):
             #         hidden_states.contiguous()
             #     )
             # else:
-            hidden_states = layer(hidden_states)
+            # [modified]
+            hidden_states, attn_weights = layer(hidden_states)
+            attn_list.append(attn_weights)
 
-        return hidden_states
+        return hidden_states, attn_list
 
 
 # from megatron.core.tensor_parallel.layers import non_tensor_paralleled, local_dp_reduce, local_dp_scatter
@@ -504,11 +512,12 @@ class VitModel(nn.Module):
         hidden_states = self.pre_layrnorm(x)
 
         # hidden_states, dis = local_dp_scatter(hidden_states)
-        output = self.transformer(hidden_states)
+        # [modified]
+        output, attn_list = self.transformer(hidden_states)
 
         # output = local_dp_reduce(output, dis)
 
-        return output
+        return output, attn_list
 
 
 vit_model_cfg = adict(
@@ -701,14 +710,18 @@ class ImageEncoderViT(nn.Module):
             # x = x + self.pos_embed
             x = x + get_abs_pos_sam(self.pos_embed, x.size(1))
 
+        # [modified]
+        attn_list = []
         for blk in self.blocks:
-            x = blk(x)
+            x, attn_weights = blk(x)
+            attn_list.append(attn_weights)
 
         x = self.neck(x.permute(0, 3, 1, 2))
         x2 = self.net_2(x)
         x3 = self.net_3(x2.clone())
 
-        return x3
+        # [modified]
+        return x3, attn_list
 
 
 class Block(nn.Module):
@@ -766,7 +779,8 @@ class Block(nn.Module):
             H, W = x.shape[1], x.shape[2]
             x, pad_hw = window_partition(x, self.window_size)
 
-        x = self.attn(x)
+        # [modified]
+        x, attn_weights = self.attn(x)
         # Reverse window partition
         if self.window_size > 0:
             x = window_unpartition(x, self.window_size, pad_hw, (H, W))
@@ -774,7 +788,8 @@ class Block(nn.Module):
         x = shortcut + x
         x = x + self.mlp(self.norm2(x))
 
-        return x
+        # [modified]
+        return x, attn_weights
 
 
 class Attention(nn.Module):
@@ -844,7 +859,11 @@ class Attention(nn.Module):
 
         x = self.proj(x)
 
-        return x
+        # [modified]
+        attn_weights = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(q.shape[-1])
+        attn_weights = attn_weights + attn_bias
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+        return x, attn_weights
 
 
 def window_partition(x: torch.Tensor, window_size: int) -> Tuple[torch.Tensor, Tuple[int, int]]:

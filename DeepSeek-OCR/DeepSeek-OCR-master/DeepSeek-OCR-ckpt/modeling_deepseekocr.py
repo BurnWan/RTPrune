@@ -1,5 +1,6 @@
 from .modeling_deepseekv2 import DeepseekV2Model, DeepseekV2ForCausalLM
 from .configuration_deepseek_v2 import DeepseekV2Config
+from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, merge_consecutive_branch_indices
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from typing import List, Optional, Tuple, Union
 from transformers.cache_utils import Cache
@@ -22,7 +23,7 @@ import re
 from tqdm import tqdm
 import numpy as np
 import time
-
+from datetime import datetime
 
 def load_image(image_path):
 
@@ -471,8 +472,9 @@ class DeepseekOCRModel(DeepseekV2Model):
                         # exit()
                    
                     else:
-                        global_features_1 = sam_model(image_ori)
-                        global_features_2 = vision_model(image_ori, global_features_1) 
+                        # [modified]
+                        global_features_1, sam_attn_list = sam_model(image_ori)
+                        global_features_2, clip_attn_list = vision_model(image_ori, global_features_1) 
                         global_features = torch.cat((global_features_2[:, 1:], global_features_1.flatten(2).permute(0, 2, 1)), dim=-1) 
                         global_features = self.projector(global_features)
                         print('=====================')
@@ -492,6 +494,18 @@ class DeepseekOCRModel(DeepseekV2Model):
                         global_features = global_features.view(-1, n_dim)
 
                         global_local_features = torch.cat([global_features, self.view_seperator[None, :]], dim=0)
+                        # [modified]
+                        sam_attn = sam_attn_list[-1].mean(dim=-2)
+                        sam_attn = sam_attn.mean(dim=1)[0]
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/sam_attn11/{timestamp}.png'
+                        draw_imp_img(image_ori, output_path, sam_attn, base_size = image_ori.shape[-1], h=4*h, w=4*w)
+
+                        clip_attn = clip_attn_list[-1].mean(dim=-2)
+                        clip_attn = clip_attn[...,1:, 1:].mean(dim=1)[0]
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/clip_attn23/{timestamp}.png'
+                        draw_imp_img(image_ori, output_path, clip_attn, base_size = image_ori.shape[-1], h=h, w=w)
 
                     images_in_this_batch.append(global_local_features)
                 

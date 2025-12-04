@@ -35,37 +35,76 @@ def deepseek_ocr_post_process(res):
         outputs = outputs.replace(a_match_other, '').replace('\\coloneqq', ':=').replace('\\eqqcolon', '=:')
     return outputs
 
-model_name = 'deepseek-ai/DeepSeek-OCR'
+def run_single(model_path, image_file, output_path):
 
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_path, _attn_implementation='flash_attention_2', trust_remote_code=True, use_safetensors=True)
+    model = model.eval().cuda().to(torch.bfloat16)
 
-tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-model = AutoModel.from_pretrained(model_name, _attn_implementation='flash_attention_2', trust_remote_code=True, use_safetensors=True)
-model = model.eval().cuda().to(torch.bfloat16)
+    # prompt = "<image>\nFree OCR. "
+    prompt = "<image>\n<|grounding|>Convert the document to markdown. "
+    basename = Path(image_file).stem
 
+    # infer(self, tokenizer, prompt='', image_file='', output_path = ' ', base_size = 1024, image_size = 640, crop_mode = True, test_compress = False, save_results = False):
 
+    # Tiny: base_size = 512, image_size = 512, crop_mode = False
+    # Small: base_size = 640, image_size = 640, crop_mode = False
+    # Base: base_size = 1024, image_size = 1024, crop_mode = False
+    # Large: base_size = 1280, image_size = 1280, crop_mode = False
 
-# prompt = "<image>\nFree OCR. "
-prompt = "<image>\n<|grounding|>Convert the document to markdown. "
-image_file = 'your_image.jpg'
-output_path = 'your/output/dir'
-basename = Path(image_file).stem
+    # Gundam: base_size = 1024, image_size = 640, crop_mode = True
 
+    # res = model.infer(tokenizer, prompt=prompt, image_file=image_file, output_path = output_path, base_size = 1024, image_size = 640, crop_mode=True, save_results = True, test_compress = True)
+    res = model.infer(tokenizer, prompt=prompt, image_file=image_file, output_path = output_path, base_size = 1024, image_size = 1024, crop_mode=False, save_results = True, eval_mode = True)
 
+    outputs = deepseek_ocr_post_process(res)
+    markdown_file = os.path.join(output_path, f"{basename}.md")
+    with open(markdown_file, 'w', encoding='utf-8') as file:
+        file.write(outputs)
+        print(f"Saved: {markdown_file}")
 
-# infer(self, tokenizer, prompt='', image_file='', output_path = ' ', base_size = 1024, image_size = 640, crop_mode = True, test_compress = False, save_results = False):
+def run_batch(model_path, input_dir, output_dir):
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_path, _attn_implementation='flash_attention_2', trust_remote_code=True, use_safetensors=True)
+    model = model.eval().cuda().to(torch.bfloat16)
 
-# Tiny: base_size = 512, image_size = 512, crop_mode = False
-# Small: base_size = 640, image_size = 640, crop_mode = False
-# Base: base_size = 1024, image_size = 1024, crop_mode = False
-# Large: base_size = 1280, image_size = 1280, crop_mode = False
+    prompt = "<image>\n<|grounding|>Convert the document to markdown."
 
-# Gundam: base_size = 1024, image_size = 640, crop_mode = True
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
 
-# res = model.infer(tokenizer, prompt=prompt, image_file=image_file, output_path = output_path, base_size = 1024, image_size = 640, crop_mode=True, save_results = True, test_compress = True)
-res = model.infer(tokenizer, prompt=prompt, image_file=image_file, output_path = output_path, base_size = 1024, image_size = 1024, crop_mode=False, save_results = True, test_compress = True)
+    image_extensions = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
 
-outputs = deepseek_ocr_post_process(res)
-markdown_file = os.path.join(output_path, f"{basename}.md")
-with open(markdown_file, 'w', encoding='utf-8') as file:
-    file.write(outputs)
-    print(f"Saved: {markdown_file}")
+    for root, _, files in os.walk(input_dir):
+        for name in files:
+            if any(name.lower().endswith(ext) for ext in image_extensions):
+                img_path = os.path.join(root, name)
+                basename = os.path.splitext(name)[0]
+                markdown_file = os.path.join(output_dir, f"{basename}.md")
+
+                if os.path.exists(markdown_file):
+                    print(f"文件已存在，跳过: {markdown_file}")
+                    continue
+
+                res = model.infer(tokenizer, prompt=prompt, image_file=img_path, 
+                    output_path = output_dir, base_size = 1024, image_size = 1024, 
+                    crop_mode=False, save_results=False, eval_mode=True)
+
+                outputs = deepseek_ocr_post_process(res)
+                markdown_file = os.path.join(output_dir, f"{basename}.md")
+
+                with open(markdown_file, 'w', encoding='utf-8') as file:
+                    file.write(outputs)
+                    print(f"Saved: {markdown_file}")
+
+# # run single img
+# model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
+# # image_file = 'your_image.jpg'
+# # output_path = 'your/output/dir'
+# run_single(model_path, image_file, output_path)
+
+# run batch imgs
+model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
+input_dir = '/export/home/wanben.burn/OmniDocBench/data/image_samples'
+output_dir = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/md'
+run_batch(model_path, input_dir, output_dir)
