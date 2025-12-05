@@ -1,6 +1,6 @@
 from .modeling_deepseekv2 import DeepseekV2Model, DeepseekV2ForCausalLM
 from .configuration_deepseek_v2 import DeepseekV2Config
-from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, merge_consecutive_branch_indices
+from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, ssd_prune, merge_consecutive_branch_indices
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from typing import List, Optional, Tuple, Union
 from transformers.cache_utils import Cache
@@ -385,9 +385,15 @@ class DeepseekOCRModel(DeepseekV2Model):
         images_spatial_crop: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
-
-
-
+        # # [Modified]
+        # past_length = 0
+        # if past_key_values is not None:
+        #     if isinstance(past_key_values, Cache):
+        #         past_length = past_key_values.seen_tokens
+        # if past_length > 0:
+        #     input_ids = input_ids[:, -1:]
+        #     position_ids = position_ids[:, -1:]
+        #     attention_mask = attention_mask[:, 0: past_length + 1]
 
         if inputs_embeds is None:
             # inputs_embeds = self.embed_tokens(input_ids)
@@ -494,18 +500,18 @@ class DeepseekOCRModel(DeepseekV2Model):
                         global_features = global_features.view(-1, n_dim)
 
                         global_local_features = torch.cat([global_features, self.view_seperator[None, :]], dim=0)
-                        # [modified]
-                        sam_attn = sam_attn_list[-1].mean(dim=-2)
-                        sam_attn = sam_attn.mean(dim=1)[0]
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/sam_attn11/{timestamp}.png'
-                        draw_imp_img(image_ori, output_path, sam_attn, base_size = image_ori.shape[-1], h=4*h, w=4*w)
+                        # # [modified]
+                        # sam_attn = sam_attn_list[-1].mean(dim=-2)
+                        # sam_attn = sam_attn.mean(dim=1)[0]
+                        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/sam_attn11/{timestamp}.png'
+                        # draw_imp_img(image_ori, output_path, sam_attn, base_size = image_ori.shape[-1], h=4*h, w=4*w)
 
-                        clip_attn = clip_attn_list[-1].mean(dim=-2)
-                        clip_attn = clip_attn[...,1:, 1:].mean(dim=1)[0]
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/clip_attn23/{timestamp}.png'
-                        draw_imp_img(image_ori, output_path, clip_attn, base_size = image_ori.shape[-1], h=h, w=w)
+                        # clip_attn = clip_attn_list[-1].mean(dim=-2)
+                        # clip_attn = clip_attn[...,1:, 1:].mean(dim=1)[0]
+                        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/clip_attn23/{timestamp}.png'
+                        # draw_imp_img(image_ori, output_path, clip_attn, base_size = image_ori.shape[-1], h=h, w=w)
 
                     images_in_this_batch.append(global_local_features)
                 
@@ -517,6 +523,68 @@ class DeepseekOCRModel(DeepseekV2Model):
                     # exit()
 
                     inputs_embeds[idx].masked_scatter_(images_seq_mask[idx].unsqueeze(-1).cuda(), images_in_this_batch)
+                    # # [modified]
+                    # SYS_TOKEN_LEN = images_seq_mask[0].nonzero()[0].item()
+                    # image_features = inputs_embeds[images_seq_mask]
+                    # img_feature_len = image_features.shape[-2]
+                    # device = image_features.device
+
+                    # # 标记不可剪枝的token
+                    # branch_indices = []
+                    # current = h
+                    # while current < img_feature_len - 1:
+                    #     branch_indices.append(current)
+                    #     current += (h + 1)
+                    # image_end_index = img_feature_len - 1
+                    # text_features = inputs_embeds[:,SYS_TOKEN_LEN+img_feature_len:SYS_TOKEN_LEN+img_feature_len+1].squeeze(0)
+                    # unprunable_indices = torch.tensor(branch_indices + [image_end_index], device=device)
+                    # unprunable_mask = torch.zeros(img_feature_len, dtype=torch.bool, device=device)
+                    # unprunable_mask[unprunable_indices] = True
+
+                    # # 提取可剪枝的token
+                    # prunable_mask = ~unprunable_mask  # 可剪枝的位置标记为True
+                    # prunable_indices = torch.where(prunable_mask)[0]  # 可剪枝token的原始索引
+                    # prunable_features = image_features[prunable_mask]
+
+                    # # 视觉token之间的相似性
+                    # image_normalized = prunable_features / prunable_features.norm(dim=-1, keepdim=True)
+                    # image_normalized = image_normalized.float()
+                    # similarity = torch.matmul(image_normalized, image_normalized.transpose(0, 1))
+
+                    # # 视觉token和文本token之间的相似性
+                    # relevance = torch.matmul(prunable_features, text_features.t()) # (B, N, M)
+                    # relevance = (relevance).mean(dim=-1) # (B, N)
+                    # relevance = (relevance - relevance.min()) / (relevance.max() - relevance.min() + 1e-8)
+
+                    # # selected_prunable_subindices = DivPrune(prunable_features, None, threshold_ratio=0.75)
+                    # # selected_prunable_subindices = CDPruner(global_features_2[:, 1:], relevance.unsqueeze(0), ratio=0.75)
+                    # # selected_prunable_subindices = ssd_prune(prunable_features, relevance, h, w, ratio=0.75)
+                    # selected_prunable_subindices = rank_prune_simple(prunable_features, relevance, h, w, ratio=0.75)
+
+                    # # draw kept vision token
+                    # keep_token = torch.zeros(h*w)
+                    # keep_token[selected_prunable_subindices] = 1
+                    # from datetime import datetime
+                    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    # output_path = f"dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample_0.75_relevance/kept_token/{timestamp}.png"
+                    # draw_imp_img(image_ori, output_path, keep_token, base_size=image_ori.shape[-1], h=h, w=w)
+
+                    # selected_prunable_indices = prunable_indices[selected_prunable_subindices]
+
+                    # # 合并保留的token
+                    # selected_visual_tokens = torch.cat([unprunable_indices, selected_prunable_indices])
+                    # selected_visual_tokens = selected_visual_tokens.sort().values
+                    # selected_visual_tokens = merge_consecutive_branch_indices(selected_visual_tokens, branch_indices)
+
+                    # selected_visual_tokens += SYS_TOKEN_LEN
+                    # keep_indexs = torch.cat((torch.arange(SYS_TOKEN_LEN,device=inputs_embeds.device), 
+                    #                          selected_visual_tokens, 
+                    #                          torch.arange(SYS_TOKEN_LEN+img_feature_len,inputs_embeds.shape[1],device=inputs_embeds.device)))
+                    # keep_indexs = torch.unique(keep_indexs).sort().values
+                    
+                    # attention_mask = attention_mask[:, keep_indexs]
+                    # inputs_embeds = inputs_embeds[:, keep_indexs, :]
+                    # position_ids = position_ids[:, keep_indexs]
 
                 idx += 1
             
@@ -714,7 +782,7 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
 
 
 
-    def infer(self, tokenizer, prompt='', image_file='', output_path = '', base_size=1024, image_size=640, crop_mode=True, test_compress=False, save_results=False, eval_mode=False):
+    def infer(self, tokenizer, prompt='', image_file=None, output_path = '', base_size=1024, image_size=640, crop_mode=True, test_compress=False, save_results=False, eval_mode=False):
         self.disable_torch_init()
 
         os.makedirs(output_path, exist_ok=True)
@@ -730,7 +798,7 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
                     # "content": "<image>\nFree OCR. ",
                     # "content": "<image>\nParse the figure. ",
                     # "content": "<image>\nExtract the text in the image. ",
-                    "images": [f'{image_file}'],
+                    "images": image_file, # [modified]
                 },
                 {"role": "<|Assistant|>", "content": ""},
             ]
@@ -761,166 +829,182 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
         valid_img_tokens = 0
         ratio = 1
 
-        image_draw = images[0].copy()
+        # [modified]
+        images_total = []
+        input_ids_total = []
+        images_seq_mask_total = []
+        images_spatial_crop_total = []
 
-        w,h = image_draw.size
-        # print(w, h)
-        ratio = 1 - ((max(w, h) - min(w, h)) / (max(w, h)))
-    
+        for i in range(len(images)):
+            image_draw = images[0].copy()
 
-        image_transform=BasicImageTransform(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5), normalize=True)
-        images_seq_mask = []
+            w,h = image_draw.size
+            # print(w, h)
+            ratio = 1 - ((max(w, h) - min(w, h)) / (max(w, h)))
+        
 
-        image_token = '<image>'
-        image_token_id = 128815
-        text_splits = prompt.split(image_token)
+            image_transform=BasicImageTransform(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5), normalize=True)
+            images_seq_mask = []
 
-        images_list, images_crop_list, images_seq_mask = [], [], []
-        tokenized_str = []
-        images_spatial_crop = []
-        for text_sep, image in zip(text_splits, images):
+            image_token = '<image>'
+            image_token_id = 128815
+            text_splits = prompt.split(image_token)
 
-            tokenized_sep = text_encode(tokenizer, text_sep, bos=False, eos=False)
+            images_list, images_crop_list, images_seq_mask = [], [], []
+            tokenized_str = []
+            images_spatial_crop = []
+            # [modified]
+            for text_sep, image in zip(text_splits, [images[i]]):
+
+                tokenized_sep = text_encode(tokenizer, text_sep, bos=False, eos=False)
+                tokenized_str += tokenized_sep
+                images_seq_mask += [False] * len(tokenized_sep)
+
+                if crop_mode:
+
+                    if image.size[0] <= 640 and image.size[1] <= 640:
+                        crop_ratio = [1, 1]
+
+                    else:
+                        if crop_mode:
+                            # best_width, best_height = select_best_resolution(image.size, self.candidate_resolutions)
+                            images_crop_raw, crop_ratio = dynamic_preprocess(image)
+                        else:
+                            # best_width, best_height = self.image_size, self.image_size
+                            crop_ratio = [1, 1]
+                    
+                    """process the global view"""
+                    # image = image.resize((base_size, base_size))
+                    global_view = ImageOps.pad(image, (base_size, base_size),
+                                            color=tuple(int(x * 255) for x in image_transform.mean))
+                    
+                    if base_size == 1024:
+                        valid_img_tokens += int(256 * ratio)
+                    elif base_size == 1280:
+                        valid_img_tokens += int(400 * ratio)
+                    # elif base_size == 640:
+                    #     valid_img_tokens += int(100 * ratio)
+                    
+
+
+
+                    
+                    images_list.append(image_transform(global_view).to(torch.bfloat16))
+
+                    # global_view_tensor = image_transform(global_view).to(torch.bfloat16)
+
+                    width_crop_num, height_crop_num = crop_ratio
+
+                    images_spatial_crop.append([width_crop_num, height_crop_num])
+                    
+                    
+                    if width_crop_num > 1 or height_crop_num > 1:
+                        """process the local views"""
+                        
+                        for i in range(len(images_crop_raw)):
+                            images_crop_list.append(image_transform(images_crop_raw[i]).to(torch.bfloat16))
+                    
+                    if image_size == 640:
+                        valid_img_tokens += len(images_crop_list) * 100
+
+                    num_queries = math.ceil((image_size // patch_size) / downsample_ratio)
+                    num_queries_base = math.ceil((base_size // patch_size) / downsample_ratio)
+
+
+
+                    """add image tokens"""
+
+                    
+
+                    tokenized_image = ([image_token_id] * num_queries_base + [image_token_id]) * num_queries_base
+                    tokenized_image += [image_token_id]
+                    if width_crop_num > 1 or height_crop_num > 1:
+                        tokenized_image += ([image_token_id] * (num_queries * width_crop_num) + [image_token_id]) * (
+                                    num_queries * height_crop_num)
+                    tokenized_str += tokenized_image
+                    images_seq_mask += [True] * len(tokenized_image)
+                    # num_image_tokens.append(len(tokenized_image))
+
+                else:
+                    # best_width, best_height = self.image_size, self.image_size
+                    # print(image.size, (best_width, best_height)) # check the select_best_resolutions func
+
+                    """process the global view"""
+                    if image_size <= 640:
+                        print('directly resize')
+                        image = image.resize((image_size, image_size))
+                    # else:
+                    global_view = ImageOps.pad(image, (image_size, image_size),
+                                            color=tuple(int(x * 255) for x in image_transform.mean))
+                    images_list.append(image_transform(global_view).to(torch.bfloat16))
+
+                    if base_size == 1024:
+                        valid_img_tokens += int(256 * ratio)
+                    elif base_size == 1280:
+                        valid_img_tokens += int(400 * ratio)
+                    elif base_size == 640:
+                        valid_img_tokens += int(100 * 1)
+                    elif base_size == 512:
+                        valid_img_tokens += int(64 * 1)
+
+                    width_crop_num, height_crop_num = 1, 1
+
+                    images_spatial_crop.append([width_crop_num, height_crop_num])
+
+
+                    """add image tokens"""
+                    num_queries = math.ceil((image_size // patch_size) / downsample_ratio)
+
+                    tokenized_image = ([image_token_id] * num_queries + [image_token_id]) * num_queries
+                    tokenized_image += [image_token_id]
+                    # tokenized_image += ([self.image_token_id] * (num_queries * width_crop_num) + [self.image_token_id]) * (
+                    #             num_queries * height_crop_num)
+                    tokenized_str += tokenized_image
+                    images_seq_mask += [True] * len(tokenized_image)
+                    # num_image_tokens.append(len(tokenized_image))
+            
+
+            """process the last text split"""
+            tokenized_sep = text_encode(tokenizer, text_splits[-1], bos=False, eos=False)
             tokenized_str += tokenized_sep
             images_seq_mask += [False] * len(tokenized_sep)
 
-            if crop_mode:
-
-                if image.size[0] <= 640 and image.size[1] <= 640:
-                    crop_ratio = [1, 1]
-
-                else:
-                    if crop_mode:
-                        # best_width, best_height = select_best_resolution(image.size, self.candidate_resolutions)
-                        images_crop_raw, crop_ratio = dynamic_preprocess(image)
-                    else:
-                        # best_width, best_height = self.image_size, self.image_size
-                        crop_ratio = [1, 1]
-                
-                """process the global view"""
-                # image = image.resize((base_size, base_size))
-                global_view = ImageOps.pad(image, (base_size, base_size),
-                                        color=tuple(int(x * 255) for x in image_transform.mean))
-                
-                if base_size == 1024:
-                    valid_img_tokens += int(256 * ratio)
-                elif base_size == 1280:
-                    valid_img_tokens += int(400 * ratio)
-                # elif base_size == 640:
-                #     valid_img_tokens += int(100 * ratio)
-                
+            """add the bos tokens"""
+            bos_id = 0
+            tokenized_str = [bos_id] + tokenized_str 
+            images_seq_mask = [False] + images_seq_mask
 
 
 
-                
-                images_list.append(image_transform(global_view).to(torch.bfloat16))
-
-                # global_view_tensor = image_transform(global_view).to(torch.bfloat16)
-
-                width_crop_num, height_crop_num = crop_ratio
-
-                images_spatial_crop.append([width_crop_num, height_crop_num])
-                
-                
-                if width_crop_num > 1 or height_crop_num > 1:
-                    """process the local views"""
-                    
-                    for i in range(len(images_crop_raw)):
-                        images_crop_list.append(image_transform(images_crop_raw[i]).to(torch.bfloat16))
-                
-                if image_size == 640:
-                    valid_img_tokens += len(images_crop_list) * 100
-
-                num_queries = math.ceil((image_size // patch_size) / downsample_ratio)
-                num_queries_base = math.ceil((base_size // patch_size) / downsample_ratio)
+            input_ids = torch.LongTensor(tokenized_str)
 
 
+            
 
-                """add image tokens"""
-
-                
-
-                tokenized_image = ([image_token_id] * num_queries_base + [image_token_id]) * num_queries_base
-                tokenized_image += [image_token_id]
-                if width_crop_num > 1 or height_crop_num > 1:
-                    tokenized_image += ([image_token_id] * (num_queries * width_crop_num) + [image_token_id]) * (
-                                num_queries * height_crop_num)
-                tokenized_str += tokenized_image
-                images_seq_mask += [True] * len(tokenized_image)
-                # num_image_tokens.append(len(tokenized_image))
-
-            else:
-                # best_width, best_height = self.image_size, self.image_size
-                # print(image.size, (best_width, best_height)) # check the select_best_resolutions func
-
-                """process the global view"""
-                if image_size <= 640:
-                    print('directly resize')
-                    image = image.resize((image_size, image_size))
-                # else:
-                global_view = ImageOps.pad(image, (image_size, image_size),
-                                        color=tuple(int(x * 255) for x in image_transform.mean))
-                images_list.append(image_transform(global_view).to(torch.bfloat16))
-
-                if base_size == 1024:
-                    valid_img_tokens += int(256 * ratio)
-                elif base_size == 1280:
-                    valid_img_tokens += int(400 * ratio)
-                elif base_size == 640:
-                    valid_img_tokens += int(100 * 1)
-                elif base_size == 512:
-                    valid_img_tokens += int(64 * 1)
-
-                width_crop_num, height_crop_num = 1, 1
-
-                images_spatial_crop.append([width_crop_num, height_crop_num])
+            images_seq_mask = torch.tensor(images_seq_mask, dtype=torch.bool)
 
 
-                """add image tokens"""
-                num_queries = math.ceil((image_size // patch_size) / downsample_ratio)
-
-                tokenized_image = ([image_token_id] * num_queries + [image_token_id]) * num_queries
-                tokenized_image += [image_token_id]
-                # tokenized_image += ([self.image_token_id] * (num_queries * width_crop_num) + [self.image_token_id]) * (
-                #             num_queries * height_crop_num)
-                tokenized_str += tokenized_image
-                images_seq_mask += [True] * len(tokenized_image)
-                # num_image_tokens.append(len(tokenized_image))
-        
-
-        """process the last text split"""
-        tokenized_sep = text_encode(tokenizer, text_splits[-1], bos=False, eos=False)
-        tokenized_str += tokenized_sep
-        images_seq_mask += [False] * len(tokenized_sep)
-
-        """add the bos tokens"""
-        bos_id = 0
-        tokenized_str = [bos_id] + tokenized_str 
-        images_seq_mask = [False] + images_seq_mask
-
-
-
-        input_ids = torch.LongTensor(tokenized_str)
-
-
-        
-
-        images_seq_mask = torch.tensor(images_seq_mask, dtype=torch.bool)
-
-
-        if len(images_list) == 0:
-            images_ori = torch.zeros((1, 3, image_size, image_size))
-            images_spatial_crop = torch.zeros((1, 2), dtype=torch.long)
-            images_crop = torch.zeros((1, 3, base_size, base_size))
-
-        else:
-            images_ori = torch.stack(images_list, dim=0)
-            images_spatial_crop = torch.tensor(images_spatial_crop, dtype=torch.long)
-            if images_crop_list:
-                images_crop = torch.stack(images_crop_list, dim=0)
-            else:
+            if len(images_list) == 0:
+                images_ori = torch.zeros((1, 3, image_size, image_size))
+                images_spatial_crop = torch.zeros((1, 2), dtype=torch.long)
                 images_crop = torch.zeros((1, 3, base_size, base_size))
 
+            else:
+                images_ori = torch.stack(images_list, dim=0)
+                images_spatial_crop = torch.tensor(images_spatial_crop, dtype=torch.long)
+                if images_crop_list:
+                    images_crop = torch.stack(images_crop_list, dim=0)
+                else:
+                    images_crop = torch.zeros((1, 3, base_size, base_size))
+        # [modified]
+            input_ids_total.append(input_ids.unsqueeze(0))
+            images_total.append((images_crop.cuda(), images_ori.cuda()))
+            images_seq_mask_total.append(images_seq_mask.unsqueeze(0))
+            images_spatial_crop_total.append(images_spatial_crop)
+        
+        input_ids_total = torch.cat(input_ids_total, dim=0)
+        images_seq_mask_total = torch.cat(images_seq_mask_total, dim=0)
+        images_spatial_crop_total = torch.cat(images_spatial_crop_total, dim=0)
 
 
         if not eval_mode:
@@ -943,13 +1027,14 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
                         )
 
         else:
+            # [modified]
             with torch.autocast("cuda", dtype=torch.bfloat16):
                 with torch.no_grad():
                     output_ids = self.generate(
-                        input_ids.unsqueeze(0).cuda(),
-                        images=[(images_crop.cuda(), images_ori.cuda())],
-                        images_seq_mask = images_seq_mask.unsqueeze(0).cuda(),
-                        images_spatial_crop = images_spatial_crop,
+                        input_ids_total.cuda(),
+                        images=images_total,
+                        images_seq_mask = images_seq_mask_total.cuda(),
+                        images_spatial_crop = images_spatial_crop_total,
                         # do_sample=False,
                         # num_beams = 1,
                         temperature=0.0,
@@ -961,14 +1046,19 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
                 
 
         if '<image>' in conversation[0]['content'] and eval_mode:
-                outputs = tokenizer.decode(output_ids[0, input_ids.unsqueeze(0).cuda().shape[1]:])
-                stop_str = '<｜end▁of▁sentence｜>'
-                if outputs.endswith(stop_str):
-                    outputs = outputs[:-len(stop_str)]
+            # [modified]
+            total_outputs = []
+            stop_str = '<｜end▁of▁sentence｜>'
+            stop_str_len = len(stop_str)
+            for i in range(output_ids.shape[0]):
+                outputs = tokenizer.decode(output_ids[i, input_ids_total.cuda().shape[1]:])
+                while outputs.endswith(stop_str):
+                    outputs = outputs[:-stop_str_len]
                 # re_match
                 outputs = outputs.strip()
+                total_outputs.append(outputs)
 
-                return outputs
+            return total_outputs
         
         if '<image>' in conversation[0]['content'] and test_compress:
             outputs = tokenizer.decode(output_ids[0, input_ids.unsqueeze(0).cuda().shape[1]:])

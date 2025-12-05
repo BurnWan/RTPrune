@@ -97,14 +97,40 @@ def run_batch(model_path, input_dir, output_dir):
                     file.write(outputs)
                     print(f"Saved: {markdown_file}")
 
+def batch_run(model_path, image_files, output_path):
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    model = AutoModel.from_pretrained(model_path, _attn_implementation='flash_attention_2', trust_remote_code=True, use_safetensors=True)
+    model = model.eval().cuda().to(torch.bfloat16)
+
+    prompt = "<image>\n<|grounding|>Convert the document to markdown. "
+    res = model.infer(tokenizer, prompt=prompt, image_file=image_files, output_path = output_path, 
+                  base_size = 1024, image_size = 1024, crop_mode=False, save_results = True, eval_mode = True)
+
+    for i in range(len(res)):
+        outputs = deepseek_ocr_post_process(res[i])
+        basename = Path(image_files[i]).stem
+        markdown_file = os.path.join(output_path, f"{basename}.md")
+        with open(markdown_file, 'w', encoding='utf-8') as file:
+            file.write(outputs)
+            print(f"Saved: {markdown_file}")
+
 # # run single img
 # model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
 # # image_file = 'your_image.jpg'
 # # output_path = 'your/output/dir'
 # run_single(model_path, image_file, output_path)
 
-# run batch imgs
+# # run batch imgs
+# model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
+# input_dir = '/export/home/wanben.burn/OmniDocBench/data/image_samples'
+# output_dir = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/md'
+# run_batch(model_path, input_dir, output_dir)
+
+# batch run imgs
 model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
-input_dir = '/export/home/wanben.burn/OmniDocBench/data/image_samples'
-output_dir = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/md'
-run_batch(model_path, input_dir, output_dir)
+image_file1 = '/export/home/wanben.burn/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/imgaes/test6.png'
+image_file2 = '/export/home/wanben.burn/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/imgaes/test7.png'
+image_file3 = '/export/home/wanben.burn/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/imgaes/test8.png'
+image_files = [image_file1, image_file2, image_file3]
+output_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/tmp'
+batch_run(model_path, image_files, output_path)
