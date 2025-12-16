@@ -437,6 +437,76 @@ def aggregate(x, index_kept, index_prop, alpha = 0.1):
 
     return x
 
+def log_sinkhorn_iterations(Z: torch.Tensor, log_mu: torch.Tensor, log_nu: torch.Tensor, iters: int) -> torch.Tensor:
+    """ Perform Sinkhorn Normalization in Log-space for stability"""
+    u, v = torch.zeros_like(log_mu), torch.zeros_like(log_nu)
+    for _ in range(iters):
+        u = log_mu - torch.logsumexp(Z + v.unsqueeze(1), dim=2)
+        v = log_nu - torch.logsumexp(Z + u.unsqueeze(2), dim=1)
+    return Z + u.unsqueeze(2) + v.unsqueeze(1)
+
+
+def log_optimal_transport(scores: torch.Tensor, iters: int) -> torch.Tensor:
+    alpha = torch.nn.Parameter(torch.tensor(1., device=scores.device))
+
+    b, m, n = scores.shape
+    one = scores.new_tensor(1)
+    ms, ns = (m*one).to(scores), (n*one).to(scores)
+
+    bins0 = alpha.expand(b, m, 1)
+    bins1 = alpha.expand(b, 1, n)
+    alpha = alpha.expand(b, 1, 1)
+
+    couplings = torch.cat([torch.cat([scores, bins0], -1),
+                           torch.cat([bins1, alpha], -1)], 1)
+
+    norm = - (ms + ns).log()
+    log_mu = torch.cat([norm.expand(m), ns.log()[None] + norm])
+    log_nu = torch.cat([norm.expand(n), ms.log()[None] + norm])
+    log_mu, log_nu = log_mu[None].expand(b, -1), log_nu[None].expand(b, -1)
+
+    Z = log_sinkhorn_iterations(couplings, log_mu, log_nu, iters)
+    Z = Z - norm  # multiply probabilities by M+N
+    return Z[:, :-1, :-1]
+
+
+def aggregate_ot(
+    x: torch.Tensor,
+    index_kept: torch.Tensor,
+    index_prop: torch.Tensor,
+    alpha: float = 0.1,
+) -> torch.Tensor:
+
+    B, N_total, C = x.shape
+    device = x.device
+    
+    # Step1: 提取保留特征和待融合特征（和原代码逻辑一致）
+    # index_kept: [B, M] → 扩展为[B, M, C]用于gather
+    idx_kept_expand = index_kept.unsqueeze(-1).expand(B, -1, C)
+    x_kept = torch.gather(x, dim=1, index=idx_kept_expand)  # [B, M, C]
+    
+    # index_prop: [B, P] → 扩展为[B, P, C]用于gather
+    idx_prop_expand = index_prop.unsqueeze(-1).expand(B, -1, C)
+    x_prop = torch.gather(x, dim=1, index=idx_prop_expand)  # [B, P, C]
+    
+    # Step2: 构建SuperGlue风格的匹配代价矩阵
+    x_kept_norm = F.normalize(x_kept, p=2, dim=-1)
+    x_prop_norm = F.normalize(x_prop, p=2, dim=-1)
+    sim_matrix = torch.bmm(x_kept_norm, x_prop_norm.transpose(1, 2))
+    
+    # Step3: 求解最优匹配矩阵
+    transport_log = log_optimal_transport(sim_matrix, iters=100)
+    transport_matrix = transport_log.exp()
+    
+    # Step4: 基于最优传输矩阵加权融合待融合特征
+    # 传输矩阵 @ x_prop → [B, M, P] @ [B, P, C] = [B, M, C]
+    x_prop_fused = torch.bmm(transport_matrix, x_prop)
+    
+    # Step5: 特征融合（和原代码的alpha加权逻辑一致）
+    x_kept_fused = x_kept + alpha * x_prop_fused
+    
+    return x_kept_fused
+
 def filter_patches_by_info(image_ori, h, w, myway="sobel", alpha=1.0):
     B, C, H, W = image_ori.shape
     patch_h = H // h  # 每个Patch的高度

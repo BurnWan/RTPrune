@@ -1,6 +1,6 @@
 from .modeling_deepseekv2 import DeepseekV2Model, DeepseekV2ForCausalLM
 from .configuration_deepseek_v2 import DeepseekV2Config
-from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, merge_consecutive_branch_indices
+from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, merge_consecutive_branch_indices, aggregate, aggregate_ot
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from typing import List, Optional, Tuple, Union
 from transformers.cache_utils import Cache
@@ -385,7 +385,15 @@ class DeepseekOCRModel(DeepseekV2Model):
         images_spatial_crop: Optional[torch.FloatTensor] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, BaseModelOutputWithPast]:
-
+        # [Modified]
+        past_length = 0
+        if past_key_values is not None:
+            if isinstance(past_key_values, Cache):
+                past_length = past_key_values.seen_tokens
+        if past_length > 0:
+            input_ids = input_ids[:, -1:]
+            position_ids = position_ids[:, -1:]
+            attention_mask = attention_mask[:, 0: past_length + 1]
 
 
 
@@ -494,18 +502,18 @@ class DeepseekOCRModel(DeepseekV2Model):
                         global_features = global_features.view(-1, n_dim)
 
                         global_local_features = torch.cat([global_features, self.view_seperator[None, :]], dim=0)
-                        # [modified]
-                        sam_attn = sam_attn_list[-1].mean(dim=-2)
-                        sam_attn = sam_attn.mean(dim=1)[0]
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/sam_attn11/{timestamp}.png'
-                        draw_imp_img(image_ori, output_path, sam_attn, base_size = image_ori.shape[-1], h=4*h, w=4*w)
+                        # # [modified]
+                        # sam_attn = sam_attn_list[-1].mean(dim=-2)
+                        # sam_attn = sam_attn.mean(dim=1)[0]
+                        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/sam_attn11/{timestamp}.png'
+                        # draw_imp_img(image_ori, output_path, sam_attn, base_size = image_ori.shape[-1], h=4*h, w=4*w)
 
-                        clip_attn = clip_attn_list[-1].mean(dim=-2)
-                        clip_attn = clip_attn[...,1:, 1:].mean(dim=1)[0]
-                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/clip_attn23/{timestamp}.png'
-                        draw_imp_img(image_ori, output_path, clip_attn, base_size = image_ori.shape[-1], h=h, w=w)
+                        # clip_attn = clip_attn_list[-1].mean(dim=-2)
+                        # clip_attn = clip_attn[...,1:, 1:].mean(dim=1)[0]
+                        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        # output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/clip_attn23/{timestamp}.png'
+                        # draw_imp_img(image_ori, output_path, clip_attn, base_size = image_ori.shape[-1], h=h, w=w)
 
                     images_in_this_batch.append(global_local_features)
                 
@@ -517,6 +525,67 @@ class DeepseekOCRModel(DeepseekV2Model):
                     # exit()
 
                     inputs_embeds[idx].masked_scatter_(images_seq_mask[idx].unsqueeze(-1).cuda(), images_in_this_batch)
+
+                    # [modified]
+                    SYS_TOKEN_LEN = images_seq_mask[0].nonzero()[0].item()
+                    image_features = inputs_embeds[images_seq_mask]
+                    img_feature_len = image_features.shape[-2]
+                    device = image_features.device
+
+                    branch_indices = []
+                    current = h
+                    while current < img_feature_len - 1:
+                        branch_indices.append(current)
+                        current += (h + 1)
+                    image_end_index = img_feature_len - 1
+                    unprunable_indices = torch.tensor(branch_indices + [image_end_index], device=device)
+                    unprunable_mask = torch.zeros(img_feature_len, dtype=torch.bool, device=device)
+                    unprunable_mask[unprunable_indices] = True
+                    prunable_mask = ~unprunable_mask
+                    prunable_indices = torch.where(prunable_mask)[0]
+
+                    prunable_features = image_features[prunable_mask]
+                    text_features = inputs_embeds[:,SYS_TOKEN_LEN+img_feature_len:].squeeze(0)
+
+                    relevance = torch.matmul(prunable_features, text_features.t())
+                    relevance = (relevance).mean(dim=-1)
+                    relevance = (relevance - relevance.min()) / (relevance.max() - relevance.min() + 1e-8)
+
+                    selected_prunable_subindices = rank_prune_simple(prunable_features, relevance, h, w, ratio=0.75)
+                    selected_prunable_indices = prunable_indices[selected_prunable_subindices]
+
+                    # token merge
+                    N_p = prunable_features.shape[0]
+                    index_kept = selected_prunable_subindices.unsqueeze(0)
+                    all_prunable_subindices = torch.arange(N_p, device=device)
+                    index_prop = all_prunable_subindices[~torch.isin(all_prunable_subindices, 
+                                                                     selected_prunable_subindices)].unsqueeze(0)
+                    prunable_features_batch = prunable_features.unsqueeze(0)
+                    aggregated_kept = aggregate_ot(
+                        x=prunable_features_batch,
+                        index_kept=index_kept,
+                        index_prop=index_prop,
+                        alpha=0.1
+                    ).squeeze(0)
+                    prunable_features[selected_prunable_subindices] = aggregated_kept
+                    new_image_features = torch.zeros_like(image_features, device=device)
+                    new_image_features[unprunable_mask] = image_features[unprunable_mask]
+                    new_image_features[prunable_mask] = prunable_features
+                    inputs_embeds[images_seq_mask] = new_image_features.unsqueeze(0)
+
+                    selected_visual_tokens = torch.cat([unprunable_indices, selected_prunable_indices])
+                    selected_visual_tokens = selected_visual_tokens.sort().values
+                    selected_visual_tokens = merge_consecutive_branch_indices(selected_visual_tokens, branch_indices)
+
+                    selected_visual_tokens += SYS_TOKEN_LEN
+                    keep_indexs = torch.cat((torch.arange(SYS_TOKEN_LEN,device=inputs_embeds.device), 
+                                             selected_visual_tokens, 
+                                             torch.arange(SYS_TOKEN_LEN+img_feature_len,inputs_embeds.shape[1],device=inputs_embeds.device)))
+                    keep_indexs = torch.unique(keep_indexs).sort().values
+                    
+                    attention_mask = attention_mask[:, keep_indexs]
+                    inputs_embeds = inputs_embeds[:, keep_indexs, :]
+                    position_ids = position_ids[:, keep_indexs]
 
                 idx += 1
             
