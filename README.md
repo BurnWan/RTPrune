@@ -22,7 +22,7 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 
 2. download the ckpt files from [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-OCR) and put them in ./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt
 
-3. replace the corresponding files with ours [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt)
+3. replace the corresponding files with our [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt) and the added part can be searched by "\[modified\]"
 
 ## Quick Start
 
@@ -32,9 +32,12 @@ cd dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf
 bash run_dpsk_ocr.py
 ```
 
+- We also provide the implementation of [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune) and [CDPruner](https://github.com/Theia-4869/CDPruner) on DeepSeek-OCR
+
+
 ## Evaluation
 
-The evaluation code follows the structure of [OmniDocBench](https://github.com/opendatalab/OmniDocBench?tab=readme-ov-file), [olmOCR-Bench](https://github.com/allenai/olmocr/tree/main/olmocr/bench) and [Ocean-OVR Benchmark](https://github.com/guoxy25/Ocean-OCR?tab=readme-ov-file).
+The evaluation code follows the pipeline of [OmniDocBench](https://github.com/opendatalab/OmniDocBench?tab=readme-ov-file), [olmOCR-Bench](https://github.com/allenai/olmocr/tree/main/olmocr/bench) and [Ocean-OCR Benchmark](https://github.com/guoxy25/Ocean-OCR?tab=readme-ov-file).
 
 ## Acknowledgement
 - This work is built upon [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR). We thank them for their excellent open-source contributions.
