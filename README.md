@@ -26,9 +26,9 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 
 ## Quick Start
 
+```
 cd dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf
 
-```
 bash run_dpsk_ocr.py
 ```
 
