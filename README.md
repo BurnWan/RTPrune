@@ -7,14 +7,39 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 </p>
 
 ## Highlights
+
 <p align="center">
-  <img src="assets/intro_accuracy-1.png" width="30%">
-  <img src="assets/intro_efficiency-1.png" width="27%">
+  <img src="assets/intro_accuracy-1.png" width="45%">
+  <img src="assets/intro_efficiency-1.png" width="40%">
 </p>
 
 1. Our RTPrune consistently outperforms prior token pruning methods on DeepSeek-OCR, retaining over 97.88\% of accuracy with 84\% of visual tokens on olmOCR-Bench. 
 2. Our RTPrune reduces GFLOPs by nearly 15.29\% and prefilling time by nearly 21.26\% on OmniDocBench when maintaining 99.47\% accuracy.
 
-## Usage
-1. download the ckpt files from huggingface and put them in ./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt
-2. replace the corresponding files with ours
+## Installation
+
+1. Install the [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR) environment.
+
+2. download the ckpt files from [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-OCR) and put them in ./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt
+
+3. replace the corresponding files with ours [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt)
+
+## Quick Start
+
+cd dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf
+
+```
+bash run_dpsk_ocr.py
+```
+
+## Evaluation
+
+The evaluation code follows the structure of [OmniDocBench](https://github.com/opendatalab/OmniDocBench?tab=readme-ov-file), [olmOCR-Bench](https://github.com/allenai/olmocr/tree/main/olmocr/bench) and [Ocean-OVR Benchmark](https://github.com/guoxy25/Ocean-OCR?tab=readme-ov-file).
+
+## Acknowledgement
+- This work is built upon [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR). We thank them for their excellent open-source contributions.
+
+- We also thank [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune), [CDPruner](https://github.com/Theia-4869/CDPruner), and others for their contributions, which have provided valuable insights.
+
+## License
+- RTPrune is licensed under the Apache License 2.0. 
