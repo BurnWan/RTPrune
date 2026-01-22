@@ -26,13 +26,13 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 
 ## Quick Start
 
+run the following command:
 ```
 cd dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf
-
 bash run_dpsk_ocr.py
 ```
 
-- We also provide the implementation of [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune) and [CDPruner](https://github.com/Theia-4869/CDPruner) on DeepSeek-OCR
+We also provide the implementation of [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune) and [CDPruner](https://github.com/Theia-4869/CDPruner) on DeepSeek-OCR
 
 
 ## Evaluation
