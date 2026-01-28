@@ -20,24 +20,26 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 
 1. Install the [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR) environment.
 
-2. download the ckpt files from [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-OCR) and put them in ./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt
+2. Download the ckpt files from [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-OCR) and put them in ./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt.
 
-3. replace the corresponding files or add new files with our [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt) and the added part can be searched by "\[modified\]"
+3. Replace the corresponding files or add new files with our [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt) and the added part can be searched by "\[modified\]".
 
 ## Quick Start
 
-run the following command:
+Run the following command:
 ```
 cd dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf
 python run_dpsk_ocr.py
 ```
 
-We also provide the implementation of [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune) and [CDPruner](https://github.com/Theia-4869/CDPruner) on DeepSeek-OCR
-
 
 ## Evaluation
 
-The evaluation code follows the pipeline of [OmniDocBench](https://github.com/opendatalab/OmniDocBench?tab=readme-ov-file), [olmOCR-Bench](https://github.com/allenai/olmocr/tree/main/olmocr/bench) and [Ocean-OCR Benchmark](https://github.com/guoxy25/Ocean-OCR?tab=readme-ov-file).
+1. The evaluation code follows the pipeline of [OmniDocBench](https://github.com/opendatalab/OmniDocBench?tab=readme-ov-file), [olmOCR-Bench](https://github.com/allenai/olmocr/tree/main/olmocr/bench) and [Ocean-OCR Benchmark](https://github.com/guoxy25/Ocean-OCR?tab=readme-ov-file).
+
+2. The evaluation for prefilling time and decoding time is provided in our [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt/modeling_deepseekv2.py).
+
+3. We also provide the implementations of [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune) and [CDPruner](https://github.com/Theia-4869/CDPruner) on DeepSeek-OCR.
 
 ## Acknowledgement
 - This work is built upon [DeepSeek-OCR](https://github.com/deepseek-ai/DeepSeek-OCR). We thank them for their excellent open-source contributions.
