@@ -4,36 +4,37 @@ import os
 import re
 from PIL import Image
 from pathlib import Path
+from tqdm import tqdm
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+
+def clean_formula(text):
+
+    formula_pattern = r'\\\[(.*?)\\\]'
+    
+    def process_formula(match):
+        formula = match.group(1)
+
+        formula = re.sub(r'\\quad\s*\([^)]*\)', '', formula)
+        
+        formula = formula.strip()
+        
+        return r'\[' + formula + r'\]'
+
+    cleaned_text = re.sub(formula_pattern, process_formula, text)
+    
+    return cleaned_text
 
 def re_match(text):
     pattern = r'(<\|ref\|>(.*?)<\|/ref\|><\|det\|>(.*?)<\|/det\|>)'
     matches = re.findall(pattern, text, re.DOTALL)
 
-    # pattern1 = r'<\|ref\|>.*?<\|/ref\|>\n'
-    # new_text1 = re.sub(pattern1, '', text, flags=re.DOTALL)
 
-    mathes_image = []
+    # mathes_image = []
     mathes_other = []
     for a_match in matches:
-        if '<|ref|>image<|/ref|>' in a_match[0]:
-            mathes_image.append(a_match[0])
-        else:
-            mathes_other.append(a_match[0])
-    return matches, mathes_image, mathes_other
-def deepseek_ocr_post_process(res):
-    
-    outputs = res.strip()
-
-    matches_ref, matches_images, mathes_other = re_match(outputs)
-
-    for idx, a_match_image in enumerate(matches_images):
-        outputs = outputs.replace(a_match_image, '![](images/' + str(idx) + '.jpg)\n')
-
-    for idx, a_match_other in enumerate(mathes_other):
-        outputs = outputs.replace(a_match_other, '').replace('\\coloneqq', ':=').replace('\\eqqcolon', '=:')
-    return outputs
+        mathes_other.append(a_match[0])
+    return matches, mathes_other
 
 def run_single(model_path, image_file, output_path):
 
@@ -55,12 +56,19 @@ def run_single(model_path, image_file, output_path):
     # Gundam: base_size = 1024, image_size = 640, crop_mode = True
 
     # res = model.infer(tokenizer, prompt=prompt, image_file=image_file, output_path = output_path, base_size = 1024, image_size = 640, crop_mode=True, save_results = True, test_compress = True)
-    res = model.infer(tokenizer, prompt=prompt, image_file=image_file, output_path = output_path, base_size = 1024, image_size = 1024, crop_mode=False, save_results = True, eval_mode = True)
+    res = model.infer(tokenizer, prompt=prompt, image_file=image_file, 
+                      output_path = output_path, base_size = 1024, image_size = 1024, 
+                      crop_mode=False, save_results = True, eval_mode = True)
 
-    outputs = deepseek_ocr_post_process(res)
+    content = clean_formula(res)
+    matches_ref, mathes_other = re_match(content)
+    for idx, a_match_other in enumerate(tqdm(mathes_other, desc="other")):
+        content = content.replace(a_match_other, '').replace('\n\n\n\n', '\n\n').replace('\n\n\n', '\n\n').replace('<center>', '').replace('</center>', '')
+    basename = Path(image_file).stem
+
     markdown_file = os.path.join(output_path, f"{basename}.md")
     with open(markdown_file, 'w', encoding='utf-8') as file:
-        file.write(outputs)
+        file.write(content)
         print(f"Saved: {markdown_file}")
 
 def run_batch(model_path, input_dir, output_dir):
@@ -83,28 +91,32 @@ def run_batch(model_path, input_dir, output_dir):
                 markdown_file = os.path.join(output_dir, f"{basename}.md")
 
                 if os.path.exists(markdown_file):
-                    print(f"文件已存在，跳过: {markdown_file}")
+                    print(f"Already exist: {markdown_file}")
                     continue
 
                 res = model.infer(tokenizer, prompt=prompt, image_file=img_path, 
                     output_path = output_dir, base_size = 1024, image_size = 1024, 
                     crop_mode=False, save_results=False, eval_mode=True)
 
-                outputs = deepseek_ocr_post_process(res)
-                markdown_file = os.path.join(output_dir, f"{basename}.md")
+                content = clean_formula(res)
+                matches_ref, mathes_other = re_match(content)
+                for idx, a_match_other in enumerate(tqdm(mathes_other, desc="other")):
+                    content = content.replace(a_match_other, '').replace('\n\n\n\n', '\n\n').replace('\n\n\n', '\n\n').replace('<center>', '').replace('</center>', '')
+                basename = Path(image_file).stem
 
+                markdown_file = os.path.join(output_path, f"{basename}.md")
                 with open(markdown_file, 'w', encoding='utf-8') as file:
-                    file.write(outputs)
+                    file.write(content)
                     print(f"Saved: {markdown_file}")
 
-# # run single img
-# model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
-# # image_file = 'your_image.jpg'
-# # output_path = 'your/output/dir'
-# run_single(model_path, image_file, output_path)
+# run single img
+model_path = '../DeepSeek-OCR-ckpt'
+image_file = 'your_image_file_path.jpg'
+output_path = 'your_output_directory'
+run_single(model_path, image_file, output_path)
 
-# run batch imgs
-model_path = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt'
-input_dir = '/export/home/wanben.burn/OmniDocBench/data/image_samples'
-output_dir = '/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/md'
-run_batch(model_path, input_dir, output_dir)
+# # run batch imgs
+# model_path = '../DeepSeek-OCR-ckpt'
+# image_file = 'your_image_file_path'
+# output_path = 'your_output_directory'
+# run_batch(model_path, input_dir, output_dir)

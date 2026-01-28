@@ -1,6 +1,6 @@
 from .modeling_deepseekv2 import DeepseekV2Model, DeepseekV2ForCausalLM
 from .configuration_deepseek_v2 import DeepseekV2Config
-from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, merge_consecutive_branch_indices, aggregate, aggregate_ot
+from .utils import draw_line_chart, draw_imp_img, CDPruner, DivPrune, rank_prune_simple, merge_consecutive_branch_indices, aggregate, aggregate_ot, aggregate_visionzip, aggregate_sparsevlm, dynamic_ratio_by_similarity, dynamic_ratio_by_info, Visionzip, aggregate_nuwa
 from transformers.modeling_outputs import BaseModelOutputWithPast, CausalLMOutputWithPast
 from typing import List, Optional, Tuple, Union
 from transformers.cache_utils import Cache
@@ -428,16 +428,17 @@ class DeepseekOCRModel(DeepseekV2Model):
                     if torch.sum(patches).item() != 0:
                         # P, C, H, W = patches.shape
                         crop_flag = 1
-                        local_features_1 = sam_model(patches)
+                        # [modified]
+                        local_features_1, local_sam_attn_list = sam_model(patches)
 
-                        local_features_2 = vision_model(patches, local_features_1)  
+                        local_features_2, local_clip_attn_list = vision_model(patches, local_features_1)  
                         # vit_time = time.time()
                         local_features = torch.cat((local_features_2[:, 1:], local_features_1.flatten(2).permute(0, 2, 1)), dim=-1) 
                         local_features = self.projector(local_features)
 
 
-                        global_features_1 = sam_model(image_ori)
-                        global_features_2 = vision_model(image_ori, global_features_1) 
+                        global_features_1, global_sam_attn_list = sam_model(image_ori)
+                        global_features_2, global_clip_attn_list = vision_model(image_ori, global_features_1) 
                         global_features = torch.cat((global_features_2[:, 1:], global_features_1.flatten(2).permute(0, 2, 1)), dim=-1) 
                         global_features = self.projector(global_features)
 
@@ -502,18 +503,6 @@ class DeepseekOCRModel(DeepseekV2Model):
                         global_features = global_features.view(-1, n_dim)
 
                         global_local_features = torch.cat([global_features, self.view_seperator[None, :]], dim=0)
-                        # # [modified]
-                        # sam_attn = sam_attn_list[-1].mean(dim=-2)
-                        # sam_attn = sam_attn.mean(dim=1)[0]
-                        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        # output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/sam_attn11/{timestamp}.png'
-                        # draw_imp_img(image_ori, output_path, sam_attn, base_size = image_ori.shape[-1], h=4*h, w=4*w)
-
-                        # clip_attn = clip_attn_list[-1].mean(dim=-2)
-                        # clip_attn = clip_attn[...,1:, 1:].mean(dim=1)[0]
-                        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        # output_path = f'/export/home/wanben.burn/github/dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf/output/dpskocr_base_sample/clip_attn23/{timestamp}.png'
-                        # draw_imp_img(image_ori, output_path, clip_attn, base_size = image_ori.shape[-1], h=h, w=w)
 
                     images_in_this_batch.append(global_local_features)
                 
@@ -530,30 +519,46 @@ class DeepseekOCRModel(DeepseekV2Model):
                     SYS_TOKEN_LEN = images_seq_mask[0].nonzero()[0].item()
                     image_features = inputs_embeds[images_seq_mask]
                     img_feature_len = image_features.shape[-2]
+                    text_features = inputs_embeds[:,SYS_TOKEN_LEN+img_feature_len:].squeeze(0)
                     device = image_features.device
 
-                    branch_indices = []
-                    current = h
-                    while current < img_feature_len - 1:
-                        branch_indices.append(current)
-                        current += (h + 1)
-                    image_end_index = img_feature_len - 1
-                    unprunable_indices = torch.tensor(branch_indices + [image_end_index], device=device)
-                    unprunable_mask = torch.zeros(img_feature_len, dtype=torch.bool, device=device)
-                    unprunable_mask[unprunable_indices] = True
-                    prunable_mask = ~unprunable_mask
-                    prunable_indices = torch.where(prunable_mask)[0]
+                    if torch.sum(patches).item() != 0:
+                        branch_indices = []
+                        step1 = width_crop_num * w2 + 1
+                        step2 = w + 1
+                        branch_indices += [-1 + i * step1 for i in range(1, height_crop_num * h2 + 1)]
+                        last = branch_indices[-1]
+                        branch_indices += [last + i * step2 for i in range(1, h + 1)]
+                        image_end_index = img_feature_len - 1
+                        unprunable_indices = torch.tensor(branch_indices + [image_end_index], device=device)
+                        unprunable_mask = torch.zeros(img_feature_len, dtype=torch.bool, device=device)
+                        unprunable_mask[unprunable_indices] = True
+                        prunable_mask = ~unprunable_mask
+                        prunable_indices = torch.where(prunable_mask)[0]
+                    else:
+                        branch_indices = []
+                        current = w
+                        while current < img_feature_len - 1:
+                            branch_indices.append(current)
+                            current += (w + 1)
+                        image_end_index = img_feature_len - 1
+                        unprunable_indices = torch.tensor(branch_indices + [image_end_index], device=device)
+                        unprunable_mask = torch.zeros(img_feature_len, dtype=torch.bool, device=device)
+                        unprunable_mask[unprunable_indices] = True
+                        prunable_mask = ~unprunable_mask
+                        prunable_indices = torch.where(prunable_mask)[0]
 
                     prunable_features = image_features[prunable_mask]
-                    text_features = inputs_embeds[:,SYS_TOKEN_LEN+img_feature_len:].squeeze(0)
+                    importance = prunable_features.norm(dim=-1, keepdim=False)
+                    importance = (importance - importance.min()) / (importance.max() - importance.min() + 1e-8)
+                    
+                    # dynamic pruning ratio
+                    dynamic_ratio1, edge_imp = dynamic_ratio_by_info(image_ori, h, w, myway="sobel")
+                    dynamic_ratio2 = dynamic_ratio_by_similarity(prunable_features)
+                    dynamic_ratio = dynamic_ratio2 + dynamic_ratio1 - dynamic_ratio1 * dynamic_ratio2
 
-                    relevance = torch.matmul(prunable_features, text_features.t())
-                    relevance = (relevance).mean(dim=-1)
-                    relevance = (relevance - relevance.min()) / (relevance.max() - relevance.min() + 1e-8)
-
-                    selected_prunable_subindices = rank_prune_simple(prunable_features, relevance, h, w, ratio=0.75)
-                    selected_prunable_indices = prunable_indices[selected_prunable_subindices]
-
+                    # token select
+                    selected_prunable_subindices = rank_prune_simple(prunable_features, importance, h, w, ratio=dynamic_ratio)
                     # token merge
                     N_p = prunable_features.shape[0]
                     index_kept = selected_prunable_subindices.unsqueeze(0)
@@ -565,13 +570,40 @@ class DeepseekOCRModel(DeepseekV2Model):
                         x=prunable_features_batch,
                         index_kept=index_kept,
                         index_prop=index_prop,
-                        alpha=0.1
+                        alpha=0.1,
                     ).squeeze(0)
+                    print(aggregated_kept.shape)
+                    aggregated_kept = aggregated_kept.to(dtype=prunable_features.dtype)
                     prunable_features[selected_prunable_subindices] = aggregated_kept
                     new_image_features = torch.zeros_like(image_features, device=device)
                     new_image_features[unprunable_mask] = image_features[unprunable_mask]
                     new_image_features[prunable_mask] = prunable_features
                     inputs_embeds[images_seq_mask] = new_image_features.unsqueeze(0)
+
+                    # # CDPruner
+                    # text_features = inputs_embeds[:,SYS_TOKEN_LEN+img_feature_len:].squeeze(0)
+                    # if torch.sum(patches).item() != 0:
+                    #     features_2 = torch.cat((local_features_2[:, 1:].reshape(1,-1,1024), global_features_2[:, 1:]), dim=1)
+                    #     selected_prunable_subindices = CDPruner(features_2, prunable_features.unsqueeze(0), text_features, ratio=dynamic_ratio)
+                    # else:
+                    #     selected_prunable_subindices = CDPruner(global_features_2[:, 1:], prunable_features.unsqueeze(0), text_features, ratio=dynamic_ratio)
+                    
+                    # # DivPrune
+                    # selected_prunable_subindices = DivPrune(prunable_features, None, threshold_ratio=dynamic_ratio)
+
+                    # # Visionzip
+                    # contextual_num = 30
+                    # selected_prunable_subindices = Visionzip(clip_attn_list[-2], contextual_num, ratio=dynamic_ratio)
+                    # target_indices_selected, merged_contextual_features = merge_visionzip(selected_prunable_subindices, prunable_features, contextual_num)
+                    # selected_prunable_subindices = torch.cat([selected_prunable_subindices.flatten(), target_indices_selected]).unique()
+                    # merged_contextual_features = merged_contextual_features.to(dtype=prunable_features.dtype, device=prunable_features.device)
+                    # prunable_features[target_indices_selected] = merged_contextual_features
+                    # new_image_features = torch.zeros_like(image_features, device=device)
+                    # new_image_features[unprunable_mask] = image_features[unprunable_mask]
+                    # new_image_features[prunable_mask] = prunable_features
+                    # inputs_embeds[images_seq_mask] = new_image_features.unsqueeze(0)
+
+                    selected_prunable_indices = prunable_indices[selected_prunable_subindices]
 
                     selected_visual_tokens = torch.cat([unprunable_indices, selected_prunable_indices])
                     selected_visual_tokens = selected_visual_tokens.sort().values

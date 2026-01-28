@@ -22,6 +22,7 @@ import math
 import warnings
 from typing import List, Optional, Tuple, Union
 import numpy as np
+import time
 
 import torch
 import torch.nn.functional as F
@@ -1479,6 +1480,12 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
         # Initialize weights and apply final processing
         self.post_init()
 
+        # [modified]
+        self.measure_latency = False
+        self.phase = "prefill"
+        self.start_event = 0
+        self.end_event = 0
+
     def get_input_embeddings(self):
         return self.embed_tokens
 
@@ -1499,6 +1506,12 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None
     ) -> Union[Tuple, BaseModelOutputWithPast]:
+        # [modified]
+        if self.measure_latency:
+            if self.phase == "prefill" and position_ids.shape[1] > 1:
+                self.start_event = time.time()
+            elif self.phase == "decode" and position_ids.shape[1] == 1:
+                self.start_event = time.time()
         output_attentions = (
             output_attentions
             if output_attentions is not None
@@ -1578,7 +1591,7 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
         all_self_attns = () if output_attentions else None
         next_decoder_cache = None
 
-        for decoder_layer in self.layers:
+        for idxx, decoder_layer in enumerate(self.layers):
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
 
@@ -1609,6 +1622,21 @@ class DeepseekV2Model(DeepseekV2PreTrainedModel):
 
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
+        
+         # [modified]
+        if self.measure_latency:
+            if self.phase == "prefill" and position_ids.shape[1] > 1:
+                self.end_event = time.time()
+                torch.cuda.synchronize()
+                prefill_time = (self.end_event - self.start_event) * 1000
+                print("prefill time", prefill_time)
+                self.phase = "decode"
+            elif self.phase == "decode" and position_ids.shape[1] == 1:
+                self.end_event = time.time()
+                torch.cuda.synchronize()
+                decode_time = (self.end_event - self.start_event) * 1000
+                print("decode time", decode_time)
+                self.phase = "prefill"
 
         hidden_states = self.norm(hidden_states)
 
