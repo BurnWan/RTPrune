@@ -22,14 +22,14 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 
 2. download the ckpt files from [huggingface](https://huggingface.co/deepseek-ai/DeepSeek-OCR) and put them in ./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt
 
-3. replace or add the corresponding files with our [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt) and the added part can be searched by "\[modified\]"
+3. replace the corresponding files or add new files with our [code](./DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-ckpt) and the added part can be searched by "\[modified\]"
 
 ## Quick Start
 
 run the following command:
 ```
 cd dpsk-ocr-token-pruning/DeepSeek-OCR/DeepSeek-OCR-master/DeepSeek-OCR-hf
-bash run_dpsk_ocr.py
+python run_dpsk_ocr.py
 ```
 
 We also provide the implementation of [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune) and [CDPruner](https://github.com/Theia-4869/CDPruner) on DeepSeek-OCR
