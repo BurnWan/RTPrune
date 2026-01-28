@@ -88,7 +88,7 @@ def draw_rele_new(image_ori, output_path, relevance, base_size, h, w):
     img_np = img_tensor.permute(1, 2, 0).cpu().to(torch.float).detach().numpy()
     img_np = (img_np - img_np.min()) / (img_np.max() - img_np.min())
     img_np = (img_np * 255).astype(np.uint8)
-    assert img_np.shape[:2] == (base_size, base_size), f"原图尺寸{img_np.shape[:2]}与目标尺寸{base_size}不匹配"
+    assert img_np.shape[:2] == (base_size, base_size), f"original size{img_np.shape[:2]} mismatch with target{base_size}"
 
     alpha_map_3d = np.expand_dims(alpha_map, axis=-1).repeat(3, axis=-1)
 
@@ -549,39 +549,29 @@ def ssd_prune(prunable_features, importance, h, w, ratio=0.5):
     selected_mask = torch.zeros(N, dtype=torch.bool, device=device)
     i0 = torch.argmax(importance)
     select_idx[0] = i0
-    selected_mask[i0] = True  # 标记为已选中
-    # V = gamma * prunable_features[i0].norm(dim=-1)  # V仅需计算一次
+    selected_mask[i0] = True
+    # V = gamma * prunable_features[i0].norm(dim=-1)  
 
     for t in range(1, visual_token_num):
-        # 直接通过掩码获取未选中的候选token（替代原列表推导式，O(1)效率）
         candidates = torch.where(~selected_mask)[0]  # shape: (k,)，k = N - t
         if len(candidates) == 0:
-            break  # 极端情况：候选集为空（一般不会触发）
+            break  
         
-        # 上一轮选中的token特征
-        last_selected = select_idx[t-1, 0]  # 取第0个batch的上一轮结果
+        last_selected = select_idx[t-1, 0] 
         v_last = prunable_features[last_selected].unsqueeze(0)  # shape: (1, d)
         
-        # 向量化计算所有候选token的投影（替代原循环，批量操作）
         v_candidates = prunable_features[candidates]  # shape: (k, d)
-        # 计算投影：(k,d)与(1,d)的矩阵乘法 -> (k,1)，再乘以v_last得到(k,d)
         projection = (torch.matmul(v_candidates, v_last.T) / torch.matmul(v_last, v_last.T)) * v_last
-        # 更新候选token的embeddings（批量操作）
-        prunable_features[candidates] = v_candidates - projection.squeeze(1)  # squeeze掉维度1
+        prunable_features[candidates] = v_candidates - projection.squeeze(1) 
         
-        # 向量化计算所有候选的分数（替代原循环）
         scores = importance[candidates] + prunable_features[candidates].norm(dim=-1) #+ (torch.rand(len(candidates), device=importance.device) * 0.0002 - 0.0001)  # shape: (k,)
         
-        # 选最高分的候选
         best_idx = torch.argmax(scores)
         best_j = candidates[best_idx]
-        # print(best_j)
         select_idx[t] = best_j
-        selected_mask[best_j] = True  # 标记为已选中
+        selected_mask[best_j] = True 
         # V = V * prunable_features[best_j].norm(dim=-1)
 
-    # 后续处理保持不变
-    # print(select_idx)
     keep_indices = select_idx.clone().detach().sort().values
     keep_indices = keep_indices.squeeze(1)
 
