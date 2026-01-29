@@ -14,7 +14,7 @@ RTPrune is a two-stage, training-free visual token pruning framework for DeepSee
 </p>
 
 1. Our RTPrune consistently outperforms prior token pruning methods on DeepSeek-OCR, retaining over 97.88\% of accuracy with 84\% of visual tokens on olmOCR-Bench. 
-2. Our RTPrune reduces GFLOPs by nearly 15.29\% and prefilling time by nearly 18.90\% on OmniDocBench when maintaining 99.47\% accuracy.
+2. Our RTPrune reduces GFLOPs by nearly 15.29\% and prefill time by nearly 18.90\% on OmniDocBench when maintaining 99.47\% accuracy.
 
 ## Installation
 
