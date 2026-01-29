@@ -572,7 +572,6 @@ class DeepseekOCRModel(DeepseekV2Model):
                         index_prop=index_prop,
                         alpha=0.1,
                     ).squeeze(0)
-                    print(aggregated_kept.shape)
                     aggregated_kept = aggregated_kept.to(dtype=prunable_features.dtype)
                     prunable_features[selected_prunable_subindices] = aggregated_kept
                     new_image_features = torch.zeros_like(image_features, device=device)
