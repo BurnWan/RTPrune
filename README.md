@@ -52,7 +52,7 @@ python run_dpsk_ocr.py
 
 - We also thank [VisionZip](https://github.com/dvlab-research/VisionZip), [DivPrune](https://github.com/vbdi/divprune), [CDPruner](https://github.com/Theia-4869/CDPruner), and others for their contributions, which have provided valuable insights.
 
-## 📜Citation
+<!-- ## 📜Citation
 
 If you find this project useful in your research, please consider citing:
 
@@ -65,4 +65,4 @@ booktitle={Forty-third International Conference on Machine Learning},
 year={2026},
 url={https://openreview.net/forum?id=bniyv9QWYc}
 }
-```
+``` -->
